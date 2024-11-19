@@ -238,6 +238,11 @@ func TestCircuitFull(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	hacked, err := operator.readAccount(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// create the transfer and sign it
 	amount := uint64(10)
 	transfer := NewTransfer(amount, sender.pubKey, receiver.pubKey, sender.nonce)
@@ -272,4 +277,14 @@ func TestCircuitFull(t *testing.T) {
 		test.WithCurves(ecc.BN254),
 		test.WithBackends(backend.GROTH16))
 
+	newHacked, err := operator.readAccount(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("i now have a proof of the state transition from root %x (where account2 balance was %s)\n"+
+		"to root %x (where account2 balance is %s)",
+		operator.witnesses.RootHashesBefore, hacked.balance.String(),
+		operator.witnesses.RootHashesAfter, newHacked.balance.String(),
+	)
 }

@@ -19,6 +19,7 @@ package rollup
 import (
 	"hash"
 	"math/rand"
+	"os"
 	"testing"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
@@ -110,6 +111,11 @@ func TestOperatorUpdateAccount(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	hacked, err := operator.readAccount(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	// create the transfer and sign it
 	amount = 10
 	transfer := NewTransfer(amount, sender.pubKey, receiver.pubKey, sender.nonce)
@@ -129,6 +135,10 @@ func TestOperatorUpdateAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	newHacked, err := operator.readAccount(2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var frAmount fr.Element
 	frAmount.SetUint64(amount)
 
@@ -141,10 +151,15 @@ func TestOperatorUpdateAccount(t *testing.T) {
 
 	compareAccount(t, newReceiver, receiver)
 	compareHashAccount(t, operator.HashState[operator.h.Size():2*operator.h.Size()], newReceiver, operator.h)
+
+	if _, b := os.LookupEnv("HACK"); b {
+		hacked.balance.Add(&hacked.balance, &frAmount)
+	}
+	compareAccount(t, newHacked, hacked)
+	compareHashAccount(t, operator.HashState[2*operator.h.Size():3*operator.h.Size()], newHacked, operator.h)
 }
 
 func createAccount(i int) (Account, eddsa.PrivateKey) {
-
 	var acc Account
 	var rnd fr.Element
 	var privkey eddsa.PrivateKey
